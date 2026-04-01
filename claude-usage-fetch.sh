@@ -31,8 +31,21 @@ trap "rm -f $LOCK_FILE" EXIT
   sleep 2
 } | script -q "$SESSION_FILE" "$CLAUDE_BIN" --no-chrome --disallowedTools "Bash,Edit,Write,Read,Grep,Glob,Agent" 2>/dev/null
 
-# Strip ANSI codes
-clean=$(perl -pe 's/\e\[[^a-zA-Z]*[a-zA-Z]//g; s/\e\][^\a]*(\a|\e\\)//g; s/\e\([A-Z]//g; s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g' "$SESSION_FILE" 2>/dev/null)
+# Strip ANSI codes, but first replace cursor-forward (\e[1C) between text chars
+# with the most likely missing character. The TUI re-paints using cursor-forward
+# to skip already-rendered chars, so "1am" becomes "1\e[1Cm" — the 'a' is lost.
+# We restore it by treating \e[<n>C as <n> placeholder chars, then use the
+# surrounding context to recover.
+clean=$(perl -pe '
+  # Replace \e[1C between a digit and "m" with "a" (for am) or "p" (for pm)
+  # by looking at what the TUI would have rendered.  Since we cannot know,
+  # we replace all \e[\d*C with a single space first, then clean up.
+  s/\e\[\d*C/ /g;
+  s/\e\[[^a-zA-Z]*[a-zA-Z]//g;
+  s/\e\][^\a]*(\a|\e\\)//g;
+  s/\e\([A-Z]//g;
+  s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g;
+' "$SESSION_FILE" 2>/dev/null)
 
 # Parse percentages
 pct_output=$(echo "$clean" | grep -oE '[0-9]+%[[:space:]]*used' | sed 's/% *used//' | head -3)
@@ -80,11 +93,13 @@ calc_remaining() {
       echo "?"
     fi
   else
-    # Same-day reset: extract time from garbled text like "1m", "1pm", "5:30pm"
-    local time=$(echo "$stripped" | grep -oiE '[0-9]+(:[0-9]+)?\s*[ap]?m')
+    # Same-day reset: extract time like "1am", "1 am", "1pm", "5:30pm", "1 m"
+    local time=$(echo "$stripped" | grep -oiE '[0-9]+(:[0-9]+)?\s*[ap]?\s*m')
     if [ -n "$time" ]; then
-      # Normalize: "1m" -> "1pm" (ANSI stripping eats 'p' or 'a')
-      time=$(echo "$time" | perl -pe 's/^(\d+(?::\d+)?)\s*m$/${1}pm/i')
+      # Normalize spaces: "1 a m" -> "1am", "1 m" -> "1m"
+      time=$(echo "$time" | perl -pe 's/\s+//g')
+      # If still just "Xm" (no a/p), infer from hour: 1-6 = am, 7-12 = pm
+      time=$(echo "$time" | perl -pe 'if (/^(\d+)(:\d+)?m$/i) { my $h=$1; my $s=$2//""; $h<=6 ? s/m$/am/i : s/m$/pm/i }')
       echo "$time"
     else
       echo "?"
