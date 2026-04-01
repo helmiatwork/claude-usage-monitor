@@ -22,6 +22,9 @@ if [ "$1" = "set_interval" ] && [[ "$2" =~ ^[0-9]+$ ]]; then
 fi
 
 if [ "$1" = "refresh_now" ]; then
+  # Show ⚡ immediately while fetcher runs
+  touch "$BLINK_FLAG"
+  open -g "swiftbar://refreshplugin?name=claude-usage"
   "$FETCHER" &>/dev/null &
   exit 0
 fi
