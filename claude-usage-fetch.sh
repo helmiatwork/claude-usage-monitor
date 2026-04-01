@@ -106,8 +106,8 @@ if [[ "$session_pct" =~ ^[0-9]+$ ]]; then
   cat > "$CACHE_FILE" << JSON
 {"session": "$session_pct", "week_all": "${week_all_pct:-?}", "week_sonnet": "${week_sonnet_pct:-?}", "session_reset": "${session_reset:-?}", "week_all_reset": "${week_all_reset:-?}", "week_sonnet_reset": "${week_sonnet_reset:-?}", "updated": "$(date '+%H:%M')"}
 JSON
-  # Signal SwiftBar to blink, then refresh after 10s to show normal icon
+  # Flash ⚡ for 10s then back to normal
   touch /tmp/claude-usage-blink
-  open -g "swiftbar://refreshplugin?name=claude-usage.5s"
-  ( sleep 11 && open -g "swiftbar://refreshplugin?name=claude-usage.5s" ) &>/dev/null &
+  open -g "swiftbar://refreshplugin?name=claude-usage"
+  ( sleep 11 && open -g "swiftbar://refreshplugin?name=claude-usage" ) &>/dev/null &
 fi
