@@ -46,21 +46,27 @@ week_sonnet_pct=$(echo "$pct_output" | sed -n '3p')
 now_epoch=$(date +%s)
 today=$(date +%Y-%m-%d)
 
-# Extract raw reset strings
-resets=$(echo "$clean" | perl -ne 'while (/Rese\w*?\s*((?:[A-Z][a-z]+\s*\d+\s*(?:at\s*)?)?\d+(?::\d+)?[ap]m)/g) { print "$1\n" }' | head -3)
+# Extract raw reset strings from text between "used" and next section boundary
+# This handles ANSI-garbled output where letters may be missing
+resets=$(echo "$clean" | perl -ne 'while (/(\d+)%\s*used\s*(.*?)(?:\(|Cur|Esc|$)/g) { my $r=$2; $r=~s/^\s+|\s+$//g; print "$r\n" }' | head -3)
 session_raw=$(echo "$resets" | sed -n '1p')
 week_all_raw=$(echo "$resets" | sed -n '2p')
 week_sonnet_raw=$(echo "$resets" | sed -n '3p')
 
 calc_remaining() {
   local raw="$1"
-  # Check if it has a date: "Apr3at10am" or "Apr 3 at 10am"
-  local month=$(echo "$raw" | perl -ne 'print $1 if /([A-Z][a-z]+)\s*\d+/')
-  local day=$(echo "$raw" | perl -ne 'print $1 if /[A-Z][a-z]+\s*(\d+)/')
-  local time=$(echo "$raw" | grep -oE '[0-9]+(:[0-9]+)?[ap]m')
+  [ -z "$raw" ] && echo "?" && return
+
+  # Strip leading "Reset"/"Resets"/"Reses" etc (use [a-z] not \w to avoid eating digits)
+  local stripped=$(echo "$raw" | perl -pe 's/^Rese[a-z]*\s*//')
+
+  # Check if it has a month+day: "Apr3at10am" or "Apr 3 at 10am"
+  local month=$(echo "$stripped" | perl -ne 'print $1 if /^([A-Z][a-z]{2})/i')
+  local day=$(echo "$stripped" | perl -ne 'print $1 if /^[A-Za-z]{3}\s*(\d+)/')
 
   if [ -n "$month" ] && [ -n "$day" ]; then
     # Future date — calc days remaining
+    month=$(echo "$month" | perl -pe '$_ = ucfirst(lc($_))')
     local target=$(date -j -f "%b %d %Y %H%M" "$month $day $(date +%Y) 0000" +%s 2>/dev/null)
     local today_midnight=$(date -j -f "%Y%m%d %H%M" "$(date +%Y%m%d) 0000" +%s 2>/dev/null)
     if [ -n "$target" ] && [ -n "$today_midnight" ]; then
@@ -71,19 +77,29 @@ calc_remaining() {
         echo "${days}d"
       fi
     else
-      echo "$time"
+      echo "?"
     fi
-  elif [ -n "$time" ]; then
-    # Same day reset — show time
-    echo "$time"
   else
-    echo "?"
+    # Same-day reset: extract time from garbled text like "1m", "1pm", "5:30pm"
+    local time=$(echo "$stripped" | grep -oiE '[0-9]+(:[0-9]+)?\s*[ap]?m')
+    if [ -n "$time" ]; then
+      # Normalize: "1m" -> "1pm" (ANSI stripping eats 'p' or 'a')
+      time=$(echo "$time" | perl -pe 's/^(\d+(?::\d+)?)\s*m$/${1}pm/i')
+      echo "$time"
+    else
+      echo "?"
+    fi
   fi
 }
 
 session_reset=$(calc_remaining "$session_raw")
 week_all_reset=$(calc_remaining "$week_all_raw")
 week_sonnet_reset=$(calc_remaining "$week_sonnet_raw")
+
+# If usage is 0% and reset is unknown, show "-" instead of "?"
+[ "$week_sonnet_pct" = "0" ] && [ "$week_sonnet_reset" = "?" ] && week_sonnet_reset="-"
+[ "$week_all_pct" = "0" ] && [ "$week_all_reset" = "?" ] && week_all_reset="-"
+[ "$session_pct" = "0" ] && [ "$session_reset" = "?" ] && session_reset="-"
 
 # Only update cache if we got valid data
 if [[ "$session_pct" =~ ^[0-9]+$ ]]; then
