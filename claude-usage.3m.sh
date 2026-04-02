@@ -98,14 +98,18 @@ if [ -f "$CACHE_FILE" ]; then
   now_epoch=$(date +%s)
   elapsed=$(( now_epoch - updated_epoch ))
   remaining=$(( FETCH_INTERVAL - elapsed ))
-  if [ "$remaining" -lt 0 ]; then remaining=0; fi
+  if [ "$remaining" -le 0 ]; then
+    remaining=0
+    touch "$BLINK_FLAG"
+    "$FETCHER" &>/dev/null &
+  fi
   mins=$(( remaining / 60 ))
   secs=$(( remaining % 60 ))
   countdown=$(printf "%d:%02d" "$mins" "$secs")
   echo "Updated: $updated | size=11 color=#888888"
   echo "Next refresh: $countdown | size=11 color=#888888"
 fi
-SELF_PATH="/Users/ichigo/Documents/repo/claude-usage-monitor/claude-usage.3m.sh"
+SELF_PATH="/Users/ichigo/Library/Application Support/SwiftBar/Plugins/claude-usage.5s.sh"
 echo "Refresh | bash='$SELF_PATH' param1=refresh_now terminal=false refresh=true"
 echo "---"
 current_mins=$(( FETCH_INTERVAL / 60 ))
