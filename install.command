@@ -100,6 +100,13 @@ cat > "$LAUNCH_AGENTS/$PLIST_NAME.plist" << PLIST
     <string>/tmp/claude-usage-fetch.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/claude-usage-fetch.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$LOCAL_BIN</string>
+        <key>HOME</key>
+        <string>$HOME</string>
+    </dict>
 </dict>
 </plist>
 PLIST

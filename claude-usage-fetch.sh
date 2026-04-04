@@ -4,11 +4,11 @@
 
 CACHE_FILE="/tmp/claude-usage-cache.json"
 SESSION_FILE="/tmp/claude-usage-session.txt"
-CLAUDE_BIN="/Users/ichigo/.local/bin/claude"
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || echo "/opt/homebrew/bin/claude")}"
 LOCK_FILE="/tmp/claude-usage-fetch.lock"
 
-# Run from OMS dir (already trusted)
-cd /Users/ichigo/Documents/repo/oms
+# Run from a trusted dir
+cd "$HOME"
 
 # Prevent concurrent runs
 if [ -f "$LOCK_FILE" ]; then
@@ -21,8 +21,11 @@ echo $$ > "$LOCK_FILE"
 trap "rm -f $LOCK_FILE" EXIT
 
 # Fetch usage via script + piped commands
+# Enter accepts trust dialog, then /usage, Esc closes modal, /exit quits
 {
-  sleep 12
+  sleep 5
+  printf "\r"
+  sleep 10
   printf "/usage\r"
   sleep 8
   printf "\033"
@@ -31,21 +34,20 @@ trap "rm -f $LOCK_FILE" EXIT
   sleep 2
 } | script -q "$SESSION_FILE" "$CLAUDE_BIN" --no-chrome --disallowedTools "Bash,Edit,Write,Read,Grep,Glob,Agent" 2>/dev/null
 
-# Strip ANSI codes, but first replace cursor-forward (\e[1C) between text chars
-# with the most likely missing character. The TUI re-paints using cursor-forward
-# to skip already-rendered chars, so "1am" becomes "1\e[1Cm" — the 'a' is lost.
-# We restore it by treating \e[<n>C as <n> placeholder chars, then use the
-# surrounding context to recover.
+# Use session file if it has data, fall back to log (launchd redirects stdout there)
+RAW_FILE="$SESSION_FILE"
+if [ ! -s "$RAW_FILE" ] && [ -s "/tmp/claude-usage-fetch.log" ]; then
+  RAW_FILE="/tmp/claude-usage-fetch.log"
+fi
+
+# Strip ANSI codes
 clean=$(perl -pe '
-  # Replace \e[1C between a digit and "m" with "a" (for am) or "p" (for pm)
-  # by looking at what the TUI would have rendered.  Since we cannot know,
-  # we replace all \e[\d*C with a single space first, then clean up.
   s/\e\[\d*C/ /g;
   s/\e\[[^a-zA-Z]*[a-zA-Z]//g;
   s/\e\][^\a]*(\a|\e\\)//g;
   s/\e\([A-Z]//g;
   s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g;
-' "$SESSION_FILE" 2>/dev/null)
+' "$RAW_FILE" 2>/dev/null)
 
 # Parse percentages
 pct_output=$(echo "$clean" | grep -oE '[0-9]+%[[:space:]]*used' | sed 's/% *used//' | head -3)
